@@ -44,30 +44,47 @@ def handle_docs(message):
             file_info = bot.get_file(message.document.file_id)
             downloaded_file = bot.download_file(file_info.file_path)
             
-            # এক্সেল রিড করা (Pandas ব্যবহার করে)
-            df = pd.read_excel(io.BytesIO(downloaded_file))
+            # এক্সেল রিড করা (হেডার খুঁজে পাওয়ার জন্য ট্রাই করবে)
+            # অনেক সময় প্রথম লাইনে টাইটেল থাকে, তাই আমরা প্রথম কয়েক লাইন চেক করি
+            df = pd.read_excel(io.BytesIO(downloaded_file), header=None)
             
-            # 'Number' নামের কলামটি খুঁজে বের করা
-            target_col = None
-            for col in df.columns:
-                if 'number' in col.lower():
-                    target_col = col
+            target_col_index = None
+            header_row_index = None
+            
+            # প্রথম ১০টি রো চেক করে 'Number' কলামটি খোঁজা
+            for r_idx, row in df.head(10).iterrows():
+                for c_idx, cell in enumerate(row):
+                    if cell and isinstance(cell, str) and 'number' in cell.lower():
+                        target_col_index = c_idx
+                        header_row_index = r_idx
+                        target_col_name = cell
+                        break
+                if target_col_index is not None:
                     break
             
-            if target_col:
-                # নম্বর কলাম বের করে স্ট্রিং-এ রূপান্তর করা
-                numbers = df[target_col].dropna().astype(str).tolist()
-                final_string = "\n".join(numbers)
+            if target_col_index is not None:
+                # হেডার রো এর পরের ডাটাগুলো নেওয়া
+                numbers_data = df.iloc[header_row_index + 1:, target_col_index]
+                numbers = numbers_data.dropna().astype(str).tolist()
                 
-                # মেমরিতে টেক্সট ফাইল তৈরি করা
-                bio = io.BytesIO()
-                bio.name = f"extracted_{file_name.split('.')[0]}.txt"
-                bio.write(final_string.encode('utf-8'))
-                bio.seek(0)
-                
-                bot.send_document(message.chat.id, bio, caption=f"'{target_col}' কলাম থেকে মোট {len(numbers)}টি নম্বর বের করা হয়েছে।")
+                # যদি নম্বর লিস্ট খালি না হয়
+                if numbers and len(numbers) > 0:
+                    final_string = "\n".join([n.strip() for n in numbers if n.strip()])
+                    
+                    if final_string.strip():
+                        # মেমরিতে টেক্সট ফাইল তৈরি করা
+                        bio = io.BytesIO()
+                        bio.name = f"extracted_{file_name.split('.')[0]}.txt"
+                        bio.write(final_string.encode('utf-8'))
+                        bio.seek(0)
+                        
+                        bot.send_document(message.chat.id, bio, caption=f"'{target_col_name}' কলাম থেকে মোট {len(numbers)}টি নম্বর বের করা হয়েছে।")
+                    else:
+                        bot.reply_to(message, "এরর: ফাইল থেকে কোনো ভ্যালিড নম্বর পাওয়া যায়নি।")
+                else:
+                    bot.reply_to(message, "এরর: এই কলামে কোনো ডাটা খুঁজে পাওয়া যায়নি।")
             else:
-                bot.reply_to(message, "এরর: এক্সেল ফাইলে 'Number' বা এই জাতীয় নামের কোনো কলাম পাওয়া যায়নি!")
+                bot.reply_to(message, "এরর: এক্সেল ফাইলে 'Number' নামের কোনো কলাম বা হেডার খুঁজে পাওয়া যায়নি!")
                 
         except Exception as e:
             bot.reply_to(message, f"ফাইলটি প্রসেস করতে সমস্যা হয়েছে: {str(e)}")
@@ -89,13 +106,16 @@ def handle_message(message):
         bot.send_chat_action(message.chat.id, 'upload_document')
         final_string = "\n".join(user_buffer[user_id])
         
-        bio = io.BytesIO()
-        bio.name = "method_hunter_data.txt"
-        bio.write(final_string.encode('utf-8'))
-        bio.seek(0)
+        if final_string.strip():
+            bio = io.BytesIO()
+            bio.name = "method_hunter_data.txt"
+            bio.write(final_string.encode('utf-8'))
+            bio.seek(0)
 
-        bot.send_document(message.chat.id, bio, caption=f"মোট আইটেম সংখ্যা: {len(user_buffer[user_id])}\nকাজ শেষ! ফাইলটি ডাউনলোড করে নিন।")
-        user_buffer[user_id] = []
+            bot.send_document(message.chat.id, bio, caption=f"মোট আইটেম সংখ্যা: {len(user_buffer[user_id])}\nকাজ শেষ! ফাইলটি ডাউনলোড করে নিন।")
+            user_buffer[user_id] = []
+        else:
+            bot.reply_to(message, "বাফার খালি। কোনো ফাইল জেনারেট করা সম্ভব হয়নি।")
 
     else:
         if user_id not in user_buffer:
