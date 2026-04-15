@@ -1,0 +1,9 @@
+# requirements.txt for Method Hunter Advance Buffer Bot
+
+pyTelegramBotAPI==4.22.1
+pandas==2.2.2
+openpyxl==3.1.5
+requests==2.32.3
+
+# Optional but recommended
+python-dotenv==1.0.1
